@@ -1,0 +1,33 @@
+{
+  "id": "e210f0ce-f203-4fa1-aab8-29942b27ed71",
+  "name": "Dynamic image",
+  "tags": ["dynamic", "text", "interactive", "image"],
+  "category": "decorations",
+  "model": "models/image_preview.glb",
+  "parameters": [
+    {
+      "id": "image",
+      "label": "Dynamic Image URL",
+      "type": "text",
+      "default": "https://i.imgur.com/d25gO61.jpg"
+    },
+    {
+      "id": "image_refresh_rate",
+      "label": "Image refresh rate (sec)",
+      "type": "slider",
+      "default": 15,
+      "max": 60,
+      "min": 5,
+      "step": 5
+    },
+    {
+      "id": "edit_url",
+      "label": "On click redirect, optional",
+      "type": "text",
+      "default": ""
+    }
+  ],
+  "requiredPermissions": [
+    "OPEN_EXTERNAL_LINK"
+  ]
+}
