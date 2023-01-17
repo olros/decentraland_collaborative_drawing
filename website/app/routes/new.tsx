@@ -1,3 +1,4 @@
+import type { LoaderArgs} from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { DRAWING_COLLECTION_NAME, firestore } from "~/fb";
 import type { CollectionReference} from "firebase/firestore";
@@ -14,10 +15,12 @@ export type DrawingDoc = {
   }[];
 };
 
-export async function loader() {
+export async function loader({ params }: LoaderArgs) {
+  const size = params.size ? Number(params.size) : 50; 
+
   const data: DrawingDoc = {
-    rows: 50,
-    columns: 50,
+    rows: size,
+    columns: size,
     drawings: [],
   }
   
