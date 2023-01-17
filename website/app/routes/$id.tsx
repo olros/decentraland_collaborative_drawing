@@ -1,12 +1,13 @@
 import type { LoaderArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useParams } from "@remix-run/react";
-import type { DocumentReference} from "firebase/firestore";
-import { arrayUnion, onSnapshot, writeBatch} from "firebase/firestore";
+import { useLoaderData } from "@remix-run/react";
+import type { DocumentReference } from "firebase/firestore";
+import { arrayUnion, writeBatch } from "firebase/firestore";
 import { doc, getDoc } from "firebase/firestore";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { DRAWING_COLLECTION_NAME, firestore } from "~/fb";
+import { useDebounce } from "~/hooks";
 import type { DrawingDoc } from "./new";
 
 export const drawingToImage = (drawing: DrawingDoc) => {
@@ -15,23 +16,9 @@ export const drawingToImage = (drawing: DrawingDoc) => {
   );
   drawing.drawings.forEach((draw) => {
     document[draw.y][draw.x] = draw.color;
-  })
+  });
   return document;
-}
-
-function useDebounce<T>(value: T, delay?: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay || 200);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-}
+};
 
 function hexToRGB(h: string) {
   let r = "0";
@@ -56,60 +43,85 @@ function hexToRGB(h: string) {
 
 export async function loader({ params }: LoaderArgs) {
   const docRef = await getDoc(
-    doc(firestore, DRAWING_COLLECTION_NAME, params.id as string) as DocumentReference<DrawingDoc>
+    doc(
+      firestore,
+      DRAWING_COLLECTION_NAME,
+      params.id as string
+    ) as DocumentReference<DrawingDoc>
   );
   const data = docRef.data();
   if (!data) {
     return redirect("/");
   }
-  return json({ data: drawingToImage(data) });
+  return json({ id: params.id as string, document: data });
 }
 
 export default function DocumentDrawer() {
-  const { id } = useParams();
-  const { data } = useLoaderData<typeof loader>();
-  const [canvas, setCanvas] = useState(data);
+  const { document, id } = useLoaderData<typeof loader>();
+  const [drawingDoc, setDrawingDoc] = useState(document);
   const [inputColor, setInputColor] = useState("#ff0000");
 
-  const [newDrawings, setNewDrawings] = useState<DrawingDoc['drawings']>([]);
+  const [newDrawings, setNewDrawings] = useState<DrawingDoc["drawings"]>([]);
 
-  const debouncedNewDrawings = useDebounce(newDrawings);
+  const debouncedNewDrawings = useDebounce(newDrawings, 500);
+
+  const canvas = useMemo(() => drawingToImage({ ...drawingDoc, drawings: [...drawingDoc.drawings, ...newDrawings] }), [newDrawings, drawingDoc]);
 
   useEffect(() => {
-    if (debouncedNewDrawings.length > 0) {
-      const batch = writeBatch(firestore);
-      const washingtonRef = doc(
-        firestore,
-        DRAWING_COLLECTION_NAME,
-        id as string
+    let subscribed = true;
+    (async () => {
+      if (debouncedNewDrawings.length > 0) {
+        const batch = writeBatch(firestore);
+        const washingtonRef = doc(
+          firestore,
+          DRAWING_COLLECTION_NAME,
+          id
         ) as DocumentReference<DrawingDoc>;
-        
-        debouncedNewDrawings.forEach((draw) => batch.update<DrawingDoc>(washingtonRef, { drawings: arrayUnion(draw) }));
-        batch.commit();
-      }
-    }, [debouncedNewDrawings, id]);
-    
-    useEffect(() => {
-      const unsub = onSnapshot(doc(firestore, DRAWING_COLLECTION_NAME, id as string) as DocumentReference<DrawingDoc>, (doc) => {
-        const data = doc.data();
-        if (data) {
-        setCanvas(drawingToImage(data));
-      }
-    });
-    return () => {
-      unsub();
-    }
-  }, [id]);
 
-  const updateCanvas = (
-    e: React.PointerEvent<HTMLButtonElement>,
-    row: number,
-    col: number
-  ) => {
-    if (e.pressure > 0) {
-      setNewDrawings((p) => [...p, { y: row, x: col, color: hexToRGB(inputColor), timestamp: new Date().toJSON() }]);
-    }
-  };
+        debouncedNewDrawings.forEach((draw) =>
+          batch.update<DrawingDoc>(washingtonRef, {
+            drawings: arrayUnion(draw),
+          })
+        );
+        await batch.commit();
+        const docRef = await getDoc(
+          doc(
+            firestore,
+            DRAWING_COLLECTION_NAME,
+            id
+          ) as DocumentReference<DrawingDoc>
+        );
+        const newDocument = docRef.data();
+        if (subscribed && newDocument) {
+          setDrawingDoc(newDocument)
+          setNewDrawings([]);
+        }
+      }
+    })();
+
+    return () => {
+      subscribed = false;
+    };
+  }, [debouncedNewDrawings, id]);
+
+  const updateCanvas = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>, row: number, col: number) => {
+      if (e.pressure > 0) {
+        setNewDrawings((p) => [
+          ...p,
+          {
+            y: row,
+            x: col,
+            color: hexToRGB(inputColor),
+            timestamp: new Date().toJSON(),
+          },
+        ]);
+      }
+    },
+    [inputColor]
+  );
+
+  console.count();
 
   return (
     <div
@@ -142,7 +154,12 @@ export default function DocumentDrawer() {
                 key={colId}
                 style={{
                   border: "none",
-                  background: `rgb(${newDrawings.find((draw) => draw.x === colId && draw.y === rowId)?.color || col.join(",")})`,
+                  background: `rgb(${
+                    (canvas[rowId][colId]).join(",")
+                    // debouncedNewDrawings.find(
+                    //   (draw) => draw.x === colId && draw.y === rowId
+                    // )?.color || col.join(",")
+                  })`,
                 }}
               />
             ))}
