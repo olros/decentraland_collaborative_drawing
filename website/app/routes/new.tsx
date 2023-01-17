@@ -1,30 +1,38 @@
-import type { LoaderArgs} from "@remix-run/node";
+import type { LoaderArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { DRAWING_COLLECTION_NAME, firestore } from "~/fb";
-import type { CollectionReference} from "firebase/firestore";
-import { addDoc, collection} from "firebase/firestore";
+import type { CollectionReference } from "firebase/firestore";
+import { addDoc, collection } from "firebase/firestore";
 
 export type DrawingDoc = {
-  rows: number;
-  columns: number;
-  drawings: {
-    x: number;
-    y: number;
-    color: number[];
-    timestamp: string;
+  size: number;
+  rows: {
+    columns: {
+      rgb: string;
+    }[];
   }[];
 };
 
-export async function loader({ params }: LoaderArgs) {
-  const size = params.size ? Number(params.size) : 50; 
+export async function loader({ request }: LoaderArgs) {
+  const url = new URL(request.url);
+  const size = url.searchParams.get("size")
+    ? Number(url.searchParams.get("size"))
+    : 50;
 
-  const data: DrawingDoc = {
-    rows: size,
-    columns: size,
-    drawings: [],
-  }
-  
-  const docRef = await addDoc<DrawingDoc>(collection(firestore, DRAWING_COLLECTION_NAME) as CollectionReference<DrawingDoc>, data);
+  const newData: DrawingDoc = {
+    size,
+    rows: Array.from({ length: size }, (v, i) => ({
+      columns: Array.from({ length: size }, (v, i) => ({ rgb: "255,255,255" })),
+    })),
+  };
 
-  return redirect(`/${docRef.id}`);
+  const newDocRef = await addDoc(
+    collection(
+      firestore,
+      DRAWING_COLLECTION_NAME
+    ) as CollectionReference<DrawingDoc>,
+    newData
+  );
+
+  return redirect(`/${newDocRef.id}`);
 }
