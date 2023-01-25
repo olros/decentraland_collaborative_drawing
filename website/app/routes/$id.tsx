@@ -130,7 +130,8 @@ export default function DocumentDrawer() {
         <h1>Select a color</h1>
         <p>
           Hold down your pointer while dragging or clicking on the canvas to
-          draw
+          draw.
+          <br /> The drawing is saved continuously as you draw
         </p>
         <input ref={inputColorRef} type="color" defaultValue="#ff0000" />
       </div>
